@@ -175,36 +175,6 @@
     }
 
     function startGame() {
-      enterFullscreenIfNeeded();
-      hideOverlay();
-      deleteSave();
-      currentLevel = 1;
-      playerProgress = {
-        totalLives: 3,
-        totalHeartsCollected: 0,
-        upgrades: {
-          pellets: 0,
-          damage: 0,
-          penetrate: 0,
-          cooldownMult: 1.0,
-          speedMult: 1.0,
-          spreadMult: 1.0,
-          bulletSpeedMult: 1.0,
-          critChance: 0,
-          killAccel: false,
-          killAccelPercent: 0,
-          enhancedPierce: false,
-          shield: 0,
-          retreat: 0,
-          reflection: false,
-          infinitePenetrate: false,
-          infiniteRange: false,
-          ricochet: false,
-          lastLife: false,
-    async function startGame() {
-		// Инициализируем SDK (если доступен)
-		await initYandexSDK();
-
 		enterFullscreenIfNeeded();
 		hideOverlay();
 		deleteSave();
