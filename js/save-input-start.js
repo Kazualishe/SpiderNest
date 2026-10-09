@@ -201,38 +201,82 @@
           infiniteRange: false,
           ricochet: false,
           lastLife: false,
-          battleSpeed: false,
-          freeze: false,
-          randomBonus: false,
-          farSight: false,
-          longRange: false,
-          sniper: false,
-        },
-        spawnedUpgrades: {},
-        spawnedWeapons: [],
-        weaponSlots: ['pistol', null],
-        activeSlot: 0,
-        maxSlots: 1,
-      };
-      flyingHeart = null;
-      pendingOpenHeart = false;
-      cursedChoiceState = null;
-      state = initState(currentLevel);
-      draw(state);
-      Sounds.ambienceStart();
-    }
+    async function startGame() {
+		// Инициализируем SDK (если доступен)
+		await initYandexSDK();
 
-    function continueGame() {
-      enterFullscreenIfNeeded();
-      hideOverlay();
-      if (!loadGame()) {
-        startGame();
-        return;
-      }
-      draw(state);
-      Sounds.ambienceStart();
-      Sounds.playLevelMusic(currentLevel);
-    }
+		enterFullscreenIfNeeded();
+		hideOverlay();
+		deleteSave();
+		currentLevel = 1;
+		playerProgress = {
+			totalLives: 3,
+			totalHeartsCollected: 0,
+			upgrades: {
+				pellets: 0,
+				damage: 0,
+				penetrate: 0,
+				cooldownMult: 1.0,
+				speedMult: 1.0,
+				spreadMult: 1.0,
+				bulletSpeedMult: 1.0,
+				critChance: 0,
+				killAccel: false,
+				killAccelPercent: 0,
+				enhancedPierce: false,
+				shield: 0,
+				retreat: 0,
+				reflection: false,
+				infinitePenetrate: false,
+				infiniteRange: false,
+				ricochet: false,
+				lastLife: false,
+				battleSpeed: false,
+				freeze: false,
+				randomBonus: false,
+				farSight: false,
+				longRange: false,
+				sniper: false,
+			},
+			spawnedUpgrades: {},
+			spawnedWeapons: [],
+			weaponSlots: ['pistol', null],
+			activeSlot: 0,
+			maxSlots: 1,
+		};
+		flyingHeart = null;
+		pendingOpenHeart = false;
+		cursedChoiceState = null;
+		state = initState(currentLevel);
+		draw(state);
+		Sounds.ambienceStart();
+
+		// Сообщаем платформе, что игра готова к взаимодействию
+		if (window.ysdk) {
+			window.ysdk.loadingAPI.ready();
+		}
+	}
+
+    async function continueGame() {
+		// Инициализируем SDK (если доступен)
+		await initYandexSDK();
+
+		enterFullscreenIfNeeded();
+		hideOverlay();
+		if (!loadGame()) {
+			// Если нет сохранения — запускаем новую игру
+			await startGame(); // вызываем асинхронно
+			return;
+		}
+		draw(state);
+		Sounds.ambienceStart();
+		Sounds.playLevelMusic(currentLevel);
+
+		// Сообщаем платформе, что игра готова к взаимодействию
+		if (window.ysdk) {
+			window.ysdk.loadingAPI.ready();
+		}
+	}	
 
     // ============================================================
     // INPUT
@@ -808,12 +852,19 @@
     }
 
     fsBtn.addEventListener('click', () => {
-      if (!isFullscreen()) {
-        (fsContainer.requestFullscreen || fsContainer.webkitRequestFullscreen).call(fsContainer);
-      } else {
-        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      }
-    });
+    if (window.ysdk) {
+        // Используем метод SDK
+        window.ysdk.features.requestFullscreen()
+            .catch(err => console.warn('Fullscreen via SDK failed:', err));
+    } else {
+        // Fallback (локальная разработка)
+        if (!isFullscreen()) {
+            (fsContainer.requestFullscreen || fsContainer.webkitRequestFullscreen).call(fsContainer);
+        } else {
+            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        }
+    }
+	});
 
     document.addEventListener('fullscreenchange', updateFsIcon);
     document.addEventListener('webkitfullscreenchange', updateFsIcon);

@@ -68,33 +68,33 @@
         Sounds.ambienceSyncVolume();
       },
 
-      keycollect:     function() { Sounds.play('keycollect.wav'); },
-      heartcollect:   function() { Sounds.play('heartcollect.wav'); },
-      hearttravel:    function() { Sounds.play('hearttravel.wav'); },
-      hit:            function() { Sounds.play('hit' + (Math.floor(Math.random() * 5) + 1) + '.wav'); },
-      upgradecollect: function() { Sounds.play('upgradecollect.wav'); },
-      weaponcollect:  function() { Sounds.play('weaponcollect.wav'); },
+      keycollect:     function() { Sounds.play('keycollect.mp3'); },
+      heartcollect:   function() { Sounds.play('heartcollect.mp3'); },
+      hearttravel:    function() { Sounds.play('hearttravel.mp3'); },
+      hit:            function() { Sounds.play('hit' + (Math.floor(Math.random() * 5) + 1) + '.mp3'); },
+      upgradecollect: function() { Sounds.play('upgradecollect.mp3'); },
+      weaponcollect:  function() { Sounds.play('weaponcollect.mp3'); },
       shot:           function(weaponId) {
-        const map = { pistol: 'shotpistol.wav', shotgun: 'shotshotgun.wav', smg: 'shotsmg.wav', carbine: 'shotcarbine.wav', rifle: 'shotrifle.wav', revolver: 'shotrevolver.wav' };
-        const base = Sounds._load(map[weaponId] || 'shot1.wav');
+        const map = { pistol: 'shotpistol.mp3', shotgun: 'shotshotgun.mp3', smg: 'shotsmg.mp3', carbine: 'shotcarbine.mp3', rifle: 'shotrifle.mp3', revolver: 'shotrevolver.mp3' };
+        const base = Sounds._load(map[weaponId] || 'shot1.mp3');
         const snd = base.cloneNode();
         snd.volume = Sounds._volume * CONFIG.SHOT_VOLUME_MULT;
         Sounds._registerActive(snd);
         snd.play().catch(() => {});
       },
-      death:          function() { Sounds.play('death.wav'); },
-      hitonplayer:    function() { Sounds.play('hitonplayer.wav'); },
-      shield:         function() { Sounds.play('shield.wav'); },
-      levelcomplete:  function() { Sounds.play('levelcomplete.wav'); },
+      death:          function() { Sounds.play('death.mp3'); },
+      hitonplayer:    function() { Sounds.play('hitonplayer.mp3'); },
+      shield:         function() { Sounds.play('shield.mp3'); },
+      levelcomplete:  function() { Sounds.play('levelcomplete.mp3'); },
       wallhit:        function() {
-        Sounds.play('wallhit' + (Math.floor(Math.random() * 3) + 1) + '.wav');
+        Sounds.play('wallhit' + (Math.floor(Math.random() * 3) + 1) + '.mp3');
       },
-      zoom:           function() { Sounds.play('zoom.wav'); },
+      zoom:           function() { Sounds.play('zoom.mp3'); },
       _footstepTimer: 0,
       _ambience: null,
       ambienceStart() {
         if (!Sounds._ambience) {
-          Sounds._ambience = new Audio('sounds/Ambience.wav');
+          Sounds._ambience = new Audio('sounds/Ambience.mp3');
           Sounds._ambience.loop = true;
         }
         Sounds._ambience.volume = Sounds._volume * CONFIG.AMBIENCE_VOLUME_MULT;
