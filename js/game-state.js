@@ -1,270 +1,313 @@
     // ============================================================
+// AUDIO CONTEXT (Web Audio API — не вызывает системный плеер)
+// ============================================================
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+// Разблокировка AudioContext по первому взаимодействию пользователя
+function unlockAudio() {
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+  document.removeEventListener('pointerdown', unlockAudio);
+  document.removeEventListener('keydown', unlockAudio);
+  document.removeEventListener('touchstart', unlockAudio);
+}
+document.addEventListener('pointerdown', unlockAudio);
+document.addEventListener('keydown', unlockAudio);
+document.addEventListener('touchstart', unlockAudio);
+
+// Кэш декодированных буферов: name -> AudioBuffer
+const audioBuffers = {};
+// Кэш "в процессе загрузки": name -> Promise<AudioBuffer>
+const audioLoading = {};
+
+// Асинхронная загрузка и декодирование
+async function loadAudioBuffer(name) {
+  if (audioBuffers[name]) return audioBuffers[name];
+  if (audioLoading[name]) return audioLoading[name];
+
+  audioLoading[name] = (async () => {
+    const res = await fetch('sounds/' + name);
+    const arrayBuf = await res.arrayBuffer();
+    const decoded = await audioCtx.decodeAudioData(arrayBuf);
+    audioBuffers[name] = decoded;
+    delete audioLoading[name];
+    return decoded;
+  })();
+
+  return audioLoading[name];
+}
+
+// Универсальная функция воспроизведения
+// Возвращает объект { source, gain } — чтобы можно было управлять громкостью/остановкой
+function playBuffer(name, volume = 1, loop = false) {
+  const buf = audioBuffers[name];
+  if (!buf) {
+    // Ещё не загружен — запустим загрузку и проиграем при готовности
+    loadAudioBuffer(name).then(() => {
+      // при желании можно проиграть здесь, но обычно не критично
+    }).catch(() => {});
+    return null;
+  }
+  const source = audioCtx.createBufferSource();
+  source.buffer = buf;
+  source.loop = loop;
+  const gain = audioCtx.createGain();
+  gain.gain.value = volume;
+  source.connect(gain);
+  gain.connect(audioCtx.destination);
+  source.start(0);
+  return { source, gain };
+}
+    
+    // ============================================================
     // SOUNDS
     // ============================================================
     const Sounds = {
-      _cache: {},
-      _active: new Set(),
+      _volume: 1,
       _suspended: false,
       _pausedByGame: false,
+      _activeShort: new Set(),
+      _fadeFrozen: false,
 
-      _load(name) {
-        if (!this._cache[name]) {
-          this._cache[name] = new Audio('sounds/' + name);
-        }
-        return this._cache[name];
-      },
-      
-      _registerActive(snd) {
-        Sounds._active.add(snd);
-        snd.addEventListener('ended', () => Sounds._active.delete(snd), { once: true });
-        snd.addEventListener('error', () => Sounds._active.delete(snd), { once: true });
-      },
-
-      pauseAll() {
-        Sounds._suspended = true;
-        // Останавливаем фоновую музыку и амбиент — запоминаем позицию
-        if (Sounds._ambience && !Sounds._ambience.paused) {
-          Sounds._ambience.pause();
-        }
-        if (Sounds._levelMusic && !Sounds._levelMusic.paused) {
-          Sounds._levelMusic.pause();
-        }
-        if (Sounds._bossMusic && !Sounds._bossMusic.paused) {
-          Sounds._bossMusic.pause();
-        }
-        // Ставим на паузу все короткие звуки (выстрелы, шаги и т.д.)
-        for (const snd of Sounds._active) {
-          if (!snd.paused) snd.pause();
-        }
-        // Замораживаем фейд музыки, если он идёт
-        if (Sounds._musicFade) {
-          Sounds._musicFadeFrozen = true;
+      // ---- короткие звуки ----
+      _playShort(name, volume) {
+        const result = playBuffer(name, (volume !== undefined ? volume : 1) * Sounds._volume);
+        if (result) {
+          Sounds._activeShort.add(result);
+          result.source.onended = () => Sounds._activeShort.delete(result);
         }
       },
 
-      resumeAll() {
-        if (!Sounds._suspended) return;
-        Sounds._suspended = false;
-        // Не возобновляем, если игра сама на паузе (Esc) или идёт реклама
-        if (Sounds._pausedByGame) return;
-
-        if (Sounds._ambience) Sounds._ambience.play().catch(() => {});
-        if (Sounds._levelMusic) Sounds._levelMusic.play().catch(() => {});
-        if (Sounds._bossMusic) Sounds._bossMusic.play().catch(() => {});
-        // Короткие звуки не возобновляем — они к этому моменту уже неактуальны
-        Sounds._active.clear();
-
-        if (Sounds._musicFade) {
-          Sounds._musicFadeFrozen = false;
-        }
+      keycollect()     { this._playShort('keycollect.mp3'); },
+      heartcollect()   { this._playShort('heartcollect.mp3'); },
+      hearttravel()    { this._playShort('hearttravel.mp3'); },
+      hit()            { this._playShort('hit' + (Math.floor(Math.random() * 5) + 1) + '.mp3'); },
+      upgradecollect() { this._playShort('upgradecollect.mp3'); },
+      weaponcollect()  { this._playShort('weaponcollect.mp3'); },
+      shot(weaponId) {
+        const map = {
+          pistol: 'shotpistol.mp3', shotgun: 'shotshotgun.mp3',
+          smg: 'shotsmg.mp3', carbine: 'shotcarbine.mp3',
+          rifle: 'shotrifle.mp3', revolver: 'shotrevolver.mp3'
+        };
+        this._playShort(map[weaponId] || 'shot1.mp3', CONFIG.SHOT_VOLUME_MULT);
       },
+      death()         { this._playShort('death.mp3'); },
+      hitonplayer()   { this._playShort('hitonplayer.mp3'); },
+      shield()        { this._playShort('shield.mp3'); },
+      levelcomplete() { this._playShort('levelcomplete.mp3'); },
+      wallhit()       { this._playShort('wallhit' + (Math.floor(Math.random() * 3) + 1) + '.mp3'); },
+      zoom()          { this._playShort('zoom.mp3'); },
 
-      play(name) {
-        const base = this._load(name);
-        const snd = base.cloneNode();
-        snd.volume = Sounds._volume;
-        Sounds._registerActive(snd);
-        snd.play().catch(() => {});
-        Sounds.ambienceSyncVolume();
-      },
-
-      keycollect:     function() { Sounds.play('keycollect.mp3'); },
-      heartcollect:   function() { Sounds.play('heartcollect.mp3'); },
-      hearttravel:    function() { Sounds.play('hearttravel.mp3'); },
-      hit:            function() { Sounds.play('hit' + (Math.floor(Math.random() * 5) + 1) + '.mp3'); },
-      upgradecollect: function() { Sounds.play('upgradecollect.mp3'); },
-      weaponcollect:  function() { Sounds.play('weaponcollect.mp3'); },
-      shot:           function(weaponId) {
-        const map = { pistol: 'shotpistol.mp3', shotgun: 'shotshotgun.mp3', smg: 'shotsmg.mp3', carbine: 'shotcarbine.mp3', rifle: 'shotrifle.mp3', revolver: 'shotrevolver.mp3' };
-        const base = Sounds._load(map[weaponId] || 'shot1.mp3');
-        const snd = base.cloneNode();
-        snd.volume = Sounds._volume * CONFIG.SHOT_VOLUME_MULT;
-        Sounds._registerActive(snd);
-        snd.play().catch(() => {});
-      },
-      death:          function() { Sounds.play('death.mp3'); },
-      hitonplayer:    function() { Sounds.play('hitonplayer.mp3'); },
-      shield:         function() { Sounds.play('shield.mp3'); },
-      levelcomplete:  function() { Sounds.play('levelcomplete.mp3'); },
-      wallhit:        function() {
-        Sounds.play('wallhit' + (Math.floor(Math.random() * 3) + 1) + '.mp3');
-      },
-      zoom:           function() { Sounds.play('zoom.mp3'); },
       _footstepTimer: 0,
-      _ambience: null,
-      ambienceStart() {
-        if (!Sounds._ambience) {
-          Sounds._ambience = new Audio('sounds/Ambience.mp3');
-          Sounds._ambience.loop = true;
+      footstep(dt) {
+        Sounds._footstepTimer -= dt;
+        if (Sounds._footstepTimer <= 0) {
+          Sounds._playShort('footstep_concrete_00' + Math.floor(Math.random() * 5) + '.ogg');
+          Sounds._footstepTimer = CONFIG.FOOTSTEP_INTERVAL;
         }
-        Sounds._ambience.volume = Sounds._volume * CONFIG.AMBIENCE_VOLUME_MULT;
-        if (Sounds._ambience.paused) Sounds._ambience.play().catch(() => {});
+      },
+
+      // ... все методы ...
+      // ---- амбиент ----
+      _ambience: null,   // { source, gain }
+      ambienceStart() {
+        if (this._ambience) {
+          if (this._ambience.gain) {
+            this._ambience.gain.gain.value = Sounds._volume * CONFIG.AMBIENCE_VOLUME_MULT;
+          }
+          return;
+        }
+        const r = playBuffer('Ambience.mp3', Sounds._volume * CONFIG.AMBIENCE_VOLUME_MULT, true);
+        this._ambience = r;
       },
       ambienceStop() {
-        if (Sounds._ambience && !Sounds._ambience.paused) {
-          Sounds._ambience.pause();
-          Sounds._ambience.currentTime = 0;
+        if (this._ambience) {
+          try { this._ambience.source.stop(); } catch (e) {}
+          this._ambience = null;
         }
       },
       ambienceSyncVolume() {
-        if (Sounds._ambience) Sounds._ambience.volume = Sounds._volume * CONFIG.AMBIENCE_VOLUME_MULT;
+        if (this._ambience && this._ambience.gain) {
+          this._ambience.gain.gain.value = Sounds._volume * CONFIG.AMBIENCE_VOLUME_MULT;
+        }
       },
 
-      // Level music system
-      _levelMusic: null,
+      _levelMusic: null,        // { source, gain }
       _bossMusic: null,
       _currentMusicLevel: null,
-      _musicFade: null, // { from: Audio, to: Audio, fromVol: number, toVol: number, duration: number, elapsed: number }
+      _musicFade: null,
 
       playLevelMusic(level) {
         const cfg = CONFIG.MUSIC[level];
         if (!cfg) return;
-        Sounds._musicFade = null;
-        if (Sounds._bossMusic) {
-          Sounds._bossMusic.pause();
-          Sounds._bossMusic.currentTime = 0;
-          Sounds._bossMusic = null;
-        }
-        if (Sounds._levelMusic) {
-          Sounds._levelMusic.pause();
-          Sounds._levelMusic.currentTime = 0;
-        }
-        Sounds._currentMusicLevel = level;
-        Sounds._levelMusic = new Audio('sounds/' + cfg.file);
-        Sounds._levelMusic.loop = true;
-        Sounds._levelMusic.volume = cfg.volume * Sounds._volume;
-        Sounds._levelMusic.play().catch(() => {});
+        this._musicFade = null;
+        this._stopMusicObj('_bossMusic');
+        this._stopMusicObj('_levelMusic');
+        this._currentMusicLevel = level;
+        this._levelMusic = playBuffer(cfg.file, cfg.volume * Sounds._volume, true);
       },
 
+      // ...
       stopLevelMusic(fadeDuration = 0) {
-        if (!Sounds._levelMusic) return;
-        if (fadeDuration > 0 && Sounds._levelMusic.volume > 0) {
-          Sounds._musicFade = {
-            from: Sounds._levelMusic,
-            to: null,
-            fromVol: Sounds._levelMusic.volume,
+        if (!this._levelMusic) return;
+        if (fadeDuration > 0) {
+          this._musicFade = {
+            fromGain: this._levelMusic.gain.gain,
+            toGain: null,
+            fromVol: this._levelMusic.gain.gain.value,
             toVol: 0,
             duration: fadeDuration,
             elapsed: 0,
-            stopOnComplete: true,
+            stopFrom: true,
+            musicKey: '_levelMusic',
           };
         } else {
-          Sounds._levelMusic.pause();
-          Sounds._levelMusic.currentTime = 0;
-          Sounds._levelMusic = null;
-          Sounds._currentMusicLevel = null;
+          this._stopMusicObj('_levelMusic');
         }
       },
 
       stopGameMusic() {
-        // Stop level music
-        if (Sounds._levelMusic) {
-          Sounds._levelMusic.pause();
-          Sounds._levelMusic.currentTime = 0;
-          Sounds._levelMusic = null;
-        }
-        Sounds._currentMusicLevel = null;
-        // Stop boss music
-        if (Sounds._bossMusic) {
-          Sounds._bossMusic.pause();
-          Sounds._bossMusic.currentTime = 0;
-          Sounds._bossMusic = null;
-        }
-        // Clear music fade
-        Sounds._musicFade = null;
+        this._stopMusicObj('_levelMusic');
+        this._stopMusicObj('_bossMusic');
+        this._currentMusicLevel = null;
+        this._musicFade = null;
       },
 
       playBossMusic() {
         const cfg = CONFIG.MUSIC.BOSS;
         if (!cfg) return;
-        if (Sounds._bossMusic) {
-          Sounds._bossMusic.pause();
-          Sounds._bossMusic.currentTime = 0;
-        }
+        this._stopMusicObj('_bossMusic');
         const targetVol = cfg.volume * Sounds._volume;
-        Sounds._bossMusic = new Audio('sounds/' + cfg.file);
-        Sounds._bossMusic.loop = true;
-        Sounds._bossMusic.volume = 0;
-        Sounds._bossMusic.play().catch(() => {});
-        const fadeDuration = CONFIG.FADE_DURATION_LEVEL_TO_BOSS;
-        Sounds._musicFade = {
-          from: Sounds._levelMusic,
-          to: Sounds._bossMusic,
-          fromVol: Sounds._levelMusic ? Sounds._levelMusic.volume : 0,
+        this._bossMusic = playBuffer(cfg.file, 0, true);
+        if (!this._bossMusic) return;
+        this._musicFade = {
+          fromGain: this._levelMusic ? this._levelMusic.gain.gain : null,
+          toGain: this._bossMusic.gain.gain,
+          fromVol: this._levelMusic ? this._levelMusic.gain.gain.value : 0,
           toVol: targetVol,
-          duration: fadeDuration,
+          duration: CONFIG.FADE_DURATION_LEVEL_TO_BOSS,
           elapsed: 0,
-          stopOnComplete: false,
-          pauseFromOnComplete: true,
+          stopFrom: false,
+          pauseFrom: true,
+          musicKeyFrom: '_levelMusic',
         };
       },
 
       stopBossMusic() {
-        if (!Sounds._bossMusic) return;
-        const level = Sounds._currentMusicLevel || currentLevel;
+        if (!this._bossMusic) return;
+        const level = this._currentMusicLevel || currentLevel;
         const cfg = CONFIG.MUSIC[level] || CONFIG.MUSIC[1];
-        Sounds._currentMusicLevel = level;
-        if (Sounds._levelMusic) {
-          Sounds._levelMusic.volume = 0;
-          if (Sounds._levelMusic.paused) Sounds._levelMusic.play().catch(() => {});
-        } else if (cfg) {
-          Sounds._levelMusic = new Audio('sounds/' + cfg.file);
-          Sounds._levelMusic.loop = true;
-          Sounds._levelMusic.volume = 0;
-          Sounds._levelMusic.play().catch(() => {});
+        this._currentMusicLevel = level;
+
+        // Восстанавливаем level music, если её нет
+        if (!this._levelMusic && cfg) {
+          this._levelMusic = playBuffer(cfg.file, 0, true);
         }
-        const fadeDuration = CONFIG.FADE_DURATION_BOSS_TO_LEVEL;
-        Sounds._musicFade = {
-          from: Sounds._bossMusic,
-          to: Sounds._levelMusic,
-          fromVol: Sounds._bossMusic.volume,
-          toVol: cfg ? cfg.volume * Sounds._volume : 0.3,
-          duration: fadeDuration,
+        const toVol = cfg ? cfg.volume * Sounds._volume : 0.3;
+        this._musicFade = {
+          fromGain: this._bossMusic.gain.gain,
+          toGain: this._levelMusic ? this._levelMusic.gain.gain : null,
+          fromVol: this._bossMusic.gain.gain.value,
+          toVol: toVol,
+          duration: CONFIG.FADE_DURATION_BOSS_TO_LEVEL,
           elapsed: 0,
-          stopOnComplete: true,
+          stopFrom: true,
+          musicKeyFrom: '_bossMusic',
         };
       },
 
       updateMusicFade(dt) {
-        if (!Sounds._musicFade) return;
-        if (Sounds._musicFadeFrozen) return; // вкладка скрыта — не двигаем фейд
-        const fade = Sounds._musicFade;
+        if (!this._musicFade) return;
+        if (this._fadeFrozen) return;
+        const fade = this._musicFade;
         fade.elapsed += dt;
         const progress = Math.min(fade.elapsed / fade.duration, 1);
-        if (fade.from) {
-          fade.from.volume = fade.fromVol * (1 - progress);
-        }
-        if (fade.to) {
-          fade.to.volume = fade.toVol * progress;
-        }
+        if (fade.fromGain) fade.fromGain.value = fade.fromVol * (1 - progress);
+        if (fade.toGain)   fade.toGain.value   = fade.toVol * progress;
+
         if (progress >= 1) {
-          if (fade.pauseFromOnComplete && fade.from) {
-            fade.from.pause();
-          }
-          if (fade.stopOnComplete && fade.from) {
-            fade.from.pause();
-            fade.from.currentTime = 0;
-            if (fade.from === Sounds._bossMusic) {
-              Sounds._bossMusic = null;
+          // Останавливаем "from", если нужно
+          if (fade.stopFrom && fade.musicKeyFrom) {
+            const obj = this[fade.musicKeyFrom];
+            if (obj) {
+              try { obj.source.stop(); } catch (e) {}
+              this[fade.musicKeyFrom] = null;
             }
           }
-          if (fade.to === null) {
-            Sounds._levelMusic = null;
-            Sounds._currentMusicLevel = null;
+          if (fade.pauseFrom && fade.fromGain) {
+            // в Web Audio "пауза" = снижение gain до 0, но мы уже остановили
           }
-          Sounds._musicFade = null;
+          this._musicFade = null;
         }
       },
-      footstep: function(dt) {
-        Sounds._footstepTimer -= dt;
-        if (Sounds._footstepTimer <= 0) {
-          Sounds.play('footstep_concrete_00' + Math.floor(Math.random() * 5) + '.ogg');
-          Sounds._footstepTimer = CONFIG.FOOTSTEP_INTERVAL;
-        }
-      },
-    };
 
-    
+      _stopMusicObj(key) {
+        const obj = this[key];
+        if (obj) {
+          try { obj.source.stop(); } catch (e) {}
+          this[key] = null;
+        }
+      },
+
+      // ---- пауза / возобновление ----
+      pauseAll() {
+        this._suspended = true;
+        if (audioCtx.state === 'running') {
+          audioCtx.suspend().catch(() => {});
+        }
+        if (this._musicFade) this._fadeFrozen = true;
+      },
+
+      resumeAll() {
+        if (!this._suspended) return;
+        this._suspended = false;
+        if (this._pausedByGame) return;
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+        this._fadeFrozen = false;
+      },
+    }
+
+    async function preloadAllSounds(onProgress) {
+      // 1. Статические звуки
+      const files = [
+        'keycollect.mp3', 'heartcollect.mp3', 'hearttravel.mp3',
+        'upgradecollect.mp3', 'weaponcollect.mp3',
+        'hit1.mp3', 'hit2.mp3', 'hit3.mp3', 'hit4.mp3', 'hit5.mp3',
+        'hitonplayer.mp3', 'death.mp3', 'shield.mp3',
+        'shotpistol.mp3', 'shotshotgun.mp3', 'shotsmg.mp3',
+        'shotcarbine.mp3', 'shotrifle.mp3', 'shotrevolver.mp3',
+        'wallhit1.mp3', 'wallhit2.mp3', 'wallhit3.mp3',
+        'levelcomplete.mp3', 'zoom.mp3',
+        'footstep_concrete_000.ogg',
+        'footstep_concrete_001.ogg',
+        'footstep_concrete_002.ogg',
+        'footstep_concrete_003.ogg',
+        'footstep_concrete_004.ogg',
+        'Ambience.mp3',
+      ];
+
+      // 2. Музыка из конфига
+      for (const key of Object.keys(CONFIG.MUSIC || {})) {
+        const cfg = CONFIG.MUSIC[key];
+        if (cfg && cfg.file) files.push(cfg.file);
+      }
+
+      // 3. Параллельная загрузка с прогрессом
+      let loaded = 0;
+      const total = files.length;
+      await Promise.all(files.map(f =>
+        loadAudioBuffer(f)
+          .catch(() => {})
+          .finally(() => {
+            loaded++;
+            if (onProgress) onProgress(loaded / total);
+          })
+      ));
+    }
 
     function getLevelConfig(level) {
       return LEVEL_CONFIG[level] || LEVEL_CONFIG[3];

@@ -174,7 +174,8 @@
       saveGame();
     }
 
-    function startGame() {
+    async function startGame() {
+    await preloadAllSounds();
 		enterFullscreenIfNeeded();
 		hideOverlay();
 		deleteSave();
@@ -229,7 +230,8 @@
 
     async function continueGame() {
 		// Инициализируем SDK (если доступен)
-		await initYandexSDK();
+    await preloadAllSounds();
+		await initSDK();
 
 		enterFullscreenIfNeeded();
 		hideOverlay();
