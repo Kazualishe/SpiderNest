@@ -774,6 +774,8 @@
     lastTime = performance.now();
     animId = requestAnimationFrame(loop);
 
+    notifyGameReady();
+
     // ============================================================
     // FULLSCREEN
     // ============================================================

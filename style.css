@@ -25,6 +25,11 @@
     }
 
     body {
+      overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
       background-color: var(--bg);
       background-image:
         repeating-linear-gradient(

@@ -3224,6 +3224,7 @@
 
     function resumeGame() {
       paused = false;
+      Sounds._pausedByGame = false;
       pauseSliderDragging = false;
       lastTime = performance.now();
     }
@@ -3244,6 +3245,7 @@
       }
       cursedChoiceState = { offers, chest, isBoss: !chest, selectionDelay: 1.5, slideT: 0, isClosing: false, selectedUpgrade: null };
       paused = true;
+      Sounds._pausedByGame = true;
     }
 
     function drawCursedChoice() {

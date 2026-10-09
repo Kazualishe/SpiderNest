@@ -3,19 +3,71 @@
     // ============================================================
     const Sounds = {
       _cache: {},
+      _active: new Set(),
+      _suspended: false,
+      _pausedByGame: false,
+
       _load(name) {
         if (!this._cache[name]) {
           this._cache[name] = new Audio('sounds/' + name);
         }
         return this._cache[name];
       },
+      
+      _registerActive(snd) {
+        Sounds._active.add(snd);
+        snd.addEventListener('ended', () => Sounds._active.delete(snd), { once: true });
+        snd.addEventListener('error', () => Sounds._active.delete(snd), { once: true });
+      },
+
+      pauseAll() {
+        Sounds._suspended = true;
+        // Останавливаем фоновую музыку и амбиент — запоминаем позицию
+        if (Sounds._ambience && !Sounds._ambience.paused) {
+          Sounds._ambience.pause();
+        }
+        if (Sounds._levelMusic && !Sounds._levelMusic.paused) {
+          Sounds._levelMusic.pause();
+        }
+        if (Sounds._bossMusic && !Sounds._bossMusic.paused) {
+          Sounds._bossMusic.pause();
+        }
+        // Ставим на паузу все короткие звуки (выстрелы, шаги и т.д.)
+        for (const snd of Sounds._active) {
+          if (!snd.paused) snd.pause();
+        }
+        // Замораживаем фейд музыки, если он идёт
+        if (Sounds._musicFade) {
+          Sounds._musicFadeFrozen = true;
+        }
+      },
+
+      resumeAll() {
+        if (!Sounds._suspended) return;
+        Sounds._suspended = false;
+        // Не возобновляем, если игра сама на паузе (Esc) или идёт реклама
+        if (Sounds._pausedByGame) return;
+
+        if (Sounds._ambience) Sounds._ambience.play().catch(() => {});
+        if (Sounds._levelMusic) Sounds._levelMusic.play().catch(() => {});
+        if (Sounds._bossMusic) Sounds._bossMusic.play().catch(() => {});
+        // Короткие звуки не возобновляем — они к этому моменту уже неактуальны
+        Sounds._active.clear();
+
+        if (Sounds._musicFade) {
+          Sounds._musicFadeFrozen = false;
+        }
+      },
+
       play(name) {
         const base = this._load(name);
         const snd = base.cloneNode();
         snd.volume = Sounds._volume;
+        Sounds._registerActive(snd);
         snd.play().catch(() => {});
         Sounds.ambienceSyncVolume();
       },
+
       keycollect:     function() { Sounds.play('keycollect.wav'); },
       heartcollect:   function() { Sounds.play('heartcollect.wav'); },
       hearttravel:    function() { Sounds.play('hearttravel.wav'); },
@@ -27,6 +79,7 @@
         const base = Sounds._load(map[weaponId] || 'shot1.wav');
         const snd = base.cloneNode();
         snd.volume = Sounds._volume * CONFIG.SHOT_VOLUME_MULT;
+        Sounds._registerActive(snd);
         snd.play().catch(() => {});
       },
       death:          function() { Sounds.play('death.wav'); },
@@ -174,6 +227,7 @@
 
       updateMusicFade(dt) {
         if (!Sounds._musicFade) return;
+        if (Sounds._musicFadeFrozen) return; // вкладка скрыта — не двигаем фейд
         const fade = Sounds._musicFade;
         fade.elapsed += dt;
         const progress = Math.min(fade.elapsed / fade.duration, 1);
@@ -209,6 +263,8 @@
         }
       },
     };
+
+    
 
     function getLevelConfig(level) {
       return LEVEL_CONFIG[level] || LEVEL_CONFIG[3];
@@ -1025,3 +1081,13 @@
       };
     }
 
+// ============================================================
+// SOUND PAUSE ON TAB VISIBILITY CHANGE
+// ============================================================
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    Sounds.pauseAll();
+  } else {
+    Sounds.resumeAll();
+  }
+});
