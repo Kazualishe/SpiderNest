@@ -175,7 +175,20 @@
     }
 
     async function startGame() {
-    await preloadAllSounds();
+    await preloadAllSounds((p) => {
+      const ov = document.getElementById('overlay');
+      let bar = document.getElementById('load-bar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'load-bar';
+        bar.style.cssText = 'width:200px;height:6px;background:#123;border-radius:3px;margin-top:12px;overflow:hidden';
+        bar.innerHTML = '<div id="load-fill" style="height:100%;width:0;background:#00d4ff;transition:width .1s"></div>';
+        ov.appendChild(bar);
+      }
+      document.getElementById('load-fill').style.width = (p * 100) + '%';
+    });
+
+    await notifyGameReadyOnce();
 		enterFullscreenIfNeeded();
 		hideOverlay();
 		deleteSave();
@@ -221,17 +234,24 @@
 		state = initState(currentLevel);
 		draw(state);
 		Sounds.ambienceStart();
-
-		// Сообщаем платформе, что игра готова к взаимодействию
-		if (window.ysdk) {
-			window.ysdk.loadingAPI.ready();
-		}
 	}
 
     async function continueGame() {
 		// Инициализируем SDK (если доступен)
-    await preloadAllSounds();
-		await initSDK();
+    await preloadAllSounds((p) => {
+      const ov = document.getElementById('overlay');
+      let bar = document.getElementById('load-bar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'load-bar';
+        bar.style.cssText = 'width:200px;height:6px;background:#123;border-radius:3px;margin-top:12px;overflow:hidden';
+        bar.innerHTML = '<div id="load-fill" style="height:100%;width:0;background:#00d4ff;transition:width .1s"></div>';
+        ov.appendChild(bar);
+      }
+      document.getElementById('load-fill').style.width = (p * 100) + '%';
+    });
+    if (window.ysdkReady) await window.ysdkReady;
+    await notifyGameReadyOnce();
 
 		enterFullscreenIfNeeded();
 		hideOverlay();
@@ -243,11 +263,6 @@
 		draw(state);
 		Sounds.ambienceStart();
 		Sounds.playLevelMusic(currentLevel);
-
-		// Сообщаем платформе, что игра готова к взаимодействию
-		if (window.ysdk) {
-			window.ysdk.loadingAPI.ready();
-		}
 	}	
 
     // ============================================================
@@ -789,8 +804,6 @@
     showStartOverlay();
     lastTime = performance.now();
     animId = requestAnimationFrame(loop);
-
-    notifyGameReady();
 
     // ============================================================
     // FULLSCREEN
